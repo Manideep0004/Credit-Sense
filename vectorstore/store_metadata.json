@@ -1,0 +1,16 @@
+{
+  "backend": "sentence-transformers",
+  "chroma_collection": "lending_policy",
+  "tfidf_store_path": "D:\\Crazy-Shit\\CreditSense\\creditsense\\vectorstore\\tfidf_store.pkl",
+  "clause_count": 8,
+  "clause_ids": [
+    "DTI-1.1",
+    "DTI-1.2",
+    "DEFAULT-2.1",
+    "DEFAULT-2.2",
+    "AML-3.1",
+    "KYC-4.1",
+    "KYC-4.2",
+    "RISK-5.1"
+  ]
+}
