@@ -30,7 +30,14 @@ API_HOST = os.environ.get("CREDITSENSE_API_HOST")
 API_PORT = os.environ.get("CREDITSENSE_API_PORT", "10000")
 
 if API_HOST:
-    API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
+    # On Render Free Tier, internal private DNS is disabled between free web services.
+    # Route automatically to the public HTTPS domain onrender.com.
+    if not API_HOST.startswith("http") and "." not in API_HOST:
+        API_BASE_URL = f"https://{API_HOST}.onrender.com"
+    elif API_HOST.startswith("http"):
+        API_BASE_URL = API_HOST
+    else:
+        API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 else:
     API_BASE_URL = os.environ.get(
         "CREDITSENSE_API_URL",
@@ -283,8 +290,8 @@ with st.spinner("Running multi-agent underwriting pipeline…"):
     if backend_mode == "FastAPI REST API":
         try:
             with httpx.Client(timeout=30.0) as client:
-                resp = client.post(f"{API_BASE_URL}/api/v1/applications", json=raw_input)
-                if resp.status_code in (200, 201):
+                resp = client.post(f"{API_BASE_URL}/api/v1/applications?sync=true", json=raw_input)
+                if resp.status_code in (200, 201, 202):
                     app_data = resp.json()
                     details = app_data.get("decision_details", {}) or {}
                     result = {
