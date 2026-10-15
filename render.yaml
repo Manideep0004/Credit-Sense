@@ -3,6 +3,7 @@ services:
   - type: web
     name: creditsense-api
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/v1/health
@@ -14,13 +15,19 @@ services:
   - type: web
     name: creditsense-ui
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: CREDITSENSE_API_URL
+      - key: CREDITSENSE_API_HOST
         fromService:
           type: web
           name: creditsense-api
-          property: url
+          property: host
+      - key: CREDITSENSE_API_PORT
+        fromService:
+          type: web
+          name: creditsense-api
+          property: port
