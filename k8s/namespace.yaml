@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: creditsense
+  labels:
+    app.kubernetes.io/name: creditsense
+    app.kubernetes.io/part-of: creditsense-platform

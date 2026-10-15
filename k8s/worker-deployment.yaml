@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: creditsense-worker
+  namespace: creditsense
+  labels:
+    app: creditsense-worker
+    tier: background-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: creditsense-worker
+  template:
+    metadata:
+      labels:
+        app: creditsense-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: worker
+          image: creditsense-worker:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: creditsense-config
+            - secretRef:
+                name: creditsense-secrets
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["celery", "-A", "creditsense.workers.celery_app", "control", "cancel_consumer", "celery"]

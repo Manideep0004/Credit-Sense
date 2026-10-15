@@ -23,12 +23,19 @@ Usage:
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 
 from agents import compliance_agent, decision_agent, document_agent, risk_agent
+from monitoring.metrics import (
+    AGENT_EXECUTION_DURATION_SECONDS,
+    RAG_RETRIEVAL_LATENCY_SECONDS,
+    RISK_MODEL_LATENCY_SECONDS,
+)
+from otel.tracer import trace_span
 
 
 # ── shared state schema ───────────────────────────────────────────────────────
@@ -64,18 +71,27 @@ class CreditSenseState(TypedDict, total=False):
     explanation_source: Optional[str]
     decision_status: str
 
-    # Meta
+    # Observability & Meta
     pipeline_trace: list[str]
+    node_latencies: dict[str, float]
 
 
 # ── node functions ────────────────────────────────────────────────────────────
 
 def document_node(state: CreditSenseState) -> CreditSenseState:
+    t0 = time.perf_counter()
     raw = state.get("raw_input", {})
-    out = document_agent.run(raw)
+    with trace_span("DocumentAgent.validate", {"applicant.age": raw.get("age")}) as span:
+        out = document_agent.run(raw)
+        lat = round(time.perf_counter() - t0, 4)
+        AGENT_EXECUTION_DURATION_SECONDS.labels(agent_name="document_agent").observe(lat)
+        span.set_attribute("agent.status", out["status"])
+        span.set_attribute("agent.dti_ratio", out.get("dti_ratio") or 0.0)
 
     trace = state.get("pipeline_trace", [])
     trace.append("document_agent")
+    latencies = state.get("node_latencies", {})
+    latencies["document_agent"] = lat
 
     return {
         **state,
@@ -84,15 +100,25 @@ def document_node(state: CreditSenseState) -> CreditSenseState:
         "validation_errors": out["validation_errors"],
         "document_status": out["status"],
         "pipeline_trace": trace,
+        "node_latencies": latencies,
     }
 
 
 def risk_node(state: CreditSenseState) -> CreditSenseState:
+    t0 = time.perf_counter()
     features = state.get("validated_features", {})
-    out = risk_agent.run(features)
+    with trace_span("RiskAgent.predict", {"model.type": "GradientBoostingClassifier"}) as span:
+        out = risk_agent.run(features)
+        lat = round(time.perf_counter() - t0, 4)
+        AGENT_EXECUTION_DURATION_SECONDS.labels(agent_name="risk_agent").observe(lat)
+        RISK_MODEL_LATENCY_SECONDS.observe(lat)
+        span.set_attribute("risk.tier", out.get("risk_tier", "UNKNOWN"))
+        span.set_attribute("risk.probability", out.get("default_probability") or 0.0)
 
     trace = state.get("pipeline_trace", [])
     trace.append("risk_agent")
+    latencies = state.get("node_latencies", {})
+    latencies["risk_agent"] = lat
 
     return {
         **state,
@@ -100,19 +126,30 @@ def risk_node(state: CreditSenseState) -> CreditSenseState:
         "risk_tier": out.get("risk_tier"),
         "risk_status": out.get("status", "ok"),
         "pipeline_trace": trace,
+        "node_latencies": latencies,
     }
 
 
 def compliance_node(state: CreditSenseState) -> CreditSenseState:
+    t0 = time.perf_counter()
     features = state.get("validated_features", {})
     risk_out = {
         "default_probability": state.get("default_probability"),
         "risk_tier": state.get("risk_tier"),
     }
-    out = compliance_agent.run(features, risk_out)
+    with trace_span("ComplianceAgent.evaluate_and_retrieve") as span:
+        out = compliance_agent.run(features, risk_out)
+        lat = round(time.perf_counter() - t0, 4)
+        AGENT_EXECUTION_DURATION_SECONDS.labels(agent_name="compliance_agent").observe(lat)
+        RAG_RETRIEVAL_LATENCY_SECONDS.labels(backend="auto").observe(lat)
+        span.set_attribute("compliance.verdict", out.get("compliance_verdict", "UNKNOWN"))
+        span.set_attribute("compliance.has_blocking_flag", out.get("has_blocking_flag", False))
+        span.set_attribute("compliance.flags_count", len(out.get("flags", [])))
 
     trace = state.get("pipeline_trace", [])
     trace.append("compliance_agent")
+    latencies = state.get("node_latencies", {})
+    latencies["compliance_agent"] = lat
 
     return {
         **state,
@@ -123,10 +160,12 @@ def compliance_node(state: CreditSenseState) -> CreditSenseState:
         "compliance_verdict": out.get("compliance_verdict", "ERROR"),
         "compliance_status": out.get("status", "ok"),
         "pipeline_trace": trace,
+        "node_latencies": latencies,
     }
 
 
 def decision_node(state: CreditSenseState) -> CreditSenseState:
+    t0 = time.perf_counter()
     features = state.get("validated_features", {})
     risk_out = {
         "default_probability": state.get("default_probability"),
@@ -139,10 +178,17 @@ def decision_node(state: CreditSenseState) -> CreditSenseState:
         "retrieved_clauses": state.get("retrieved_clauses", []),
         "compliance_verdict": state.get("compliance_verdict", "CLEAR"),
     }
-    out = decision_agent.run(features, risk_out, compliance_out)
+    with trace_span("DecisionAgent.synthesize") as span:
+        out = decision_agent.run(features, risk_out, compliance_out)
+        lat = round(time.perf_counter() - t0, 4)
+        AGENT_EXECUTION_DURATION_SECONDS.labels(agent_name="decision_agent").observe(lat)
+        span.set_attribute("decision.outcome", out.get("decision", "UNKNOWN"))
+        span.set_attribute("decision.explanation_source", out.get("explanation_source", "unknown"))
 
     trace = state.get("pipeline_trace", [])
     trace.append("decision_agent")
+    latencies = state.get("node_latencies", {})
+    latencies["decision_agent"] = lat
 
     return {
         **state,
@@ -153,6 +199,7 @@ def decision_node(state: CreditSenseState) -> CreditSenseState:
         "explanation_source": out.get("explanation_source"),
         "decision_status": out.get("status", "ok"),
         "pipeline_trace": trace,
+        "node_latencies": latencies,
     }
 
 
@@ -162,6 +209,7 @@ def manual_review_node(state: CreditSenseState) -> CreditSenseState:
     Sets decision = MANUAL_REVIEW and writes a standard explanation
     without invoking the Decision Agent's auto-approval logic.
     """
+    t0 = time.perf_counter()
     trace = state.get("pipeline_trace", [])
     trace.append("manual_review_node")
 
@@ -178,6 +226,9 @@ def manual_review_node(state: CreditSenseState) -> CreditSenseState:
         "Automatic approval is prohibited. A compliance officer will be in touch "
         "within 3 business days."
     )
+    lat = round(time.perf_counter() - t0, 4)
+    latencies = state.get("node_latencies", {})
+    latencies["manual_review_node"] = lat
 
     return {
         **state,
@@ -188,6 +239,7 @@ def manual_review_node(state: CreditSenseState) -> CreditSenseState:
         "explanation_source": "manual_review_node",
         "decision_status": "ok",
         "pipeline_trace": trace,
+        "node_latencies": latencies,
     }
 
 

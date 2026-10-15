@@ -228,6 +228,12 @@ def run(
     has_blocking_flag = compliance_output.get("has_blocking_flag", False)
 
     decision = _determine_base_decision(risk_tier, compliance_verdict, has_blocking_flag)
+    
+    # ── Deterministic Policy Guard ───────────────────────────────────────────
+    # Compliance blocking flags (AML, KYC, repeat defaults) strictly override ML risk
+    if has_blocking_flag and decision != "MANUAL_REVIEW":
+        decision = "MANUAL_REVIEW"
+    
     interest_rate = INTEREST_RATE_SCHEDULE.get(risk_tier) if decision == "APPROVED" else None
     applied_clause_ids = [c["id"] for c in compliance_output.get("retrieved_clauses", [])]
 

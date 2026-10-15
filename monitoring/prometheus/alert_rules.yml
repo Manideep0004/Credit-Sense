@@ -1,0 +1,83 @@
+groups:
+  - name: creditsense_slo_alerts
+    rules:
+      - alert: ErrorBudgetBurnRateHigh
+        expr: (
+            sum(rate(creditsense_api_requests_total{status_code=~"5.."}[1h]))
+            /
+            sum(rate(creditsense_api_requests_total[1h]))
+          ) > (14.4 * (1 - 0.995))
+        for: 2m
+        labels:
+          severity: page
+          component: api
+          slo: availability
+        annotations:
+          summary: "API Error Budget 14.4x burn rate (1h exhaustion)"
+          description: "API availability SLO (99.5%) is consuming error budget at 14.4x rate over the last 1 hour."
+
+      - alert: ErrorBudgetBurnRateModerate
+        expr: (
+            sum(rate(creditsense_api_requests_total{status_code=~"5.."}[6h]))
+            /
+            sum(rate(creditsense_api_requests_total[6h]))
+          ) > (6 * (1 - 0.995))
+        for: 15m
+        labels:
+          severity: warning
+          component: api
+          slo: availability
+        annotations:
+          summary: "API Error Budget 6x burn rate (6h exhaustion)"
+          description: "API availability SLO (99.5%) is consuming error budget at 6x rate over the last 6 hours."
+
+      - alert: LatencySLOBreach
+        expr: histogram_quantile(0.99, sum(rate(creditsense_application_duration_seconds_bucket[5m])) by (le)) > 5.0
+        for: 3m
+        labels:
+          severity: warning
+          component: pipeline
+          slo: latency
+        annotations:
+          summary: "p99 Underwriting pipeline latency exceeds 5.0 seconds"
+          description: "p99 application processing latency is {{ $value | humanizeDuration }} over the last 5 minutes (target < 5s)."
+
+  - name: creditsense_operational_alerts
+    rules:
+      - alert: CeleryQueueDepthCritical
+        expr: creditsense_queue_depth > 50
+        for: 5m
+        labels:
+          severity: warning
+          component: celery
+        annotations:
+          summary: "Redis Celery task queue depth > 50"
+          description: "Task queue depth has remained above 50 items for 5 minutes (current depth: {{ $value }}). Workers may be starved or dead."
+
+      - alert: HighLLMFailureRate
+        expr: (
+            sum(rate(creditsense_llm_requests_total{status="failure"}[5m]))
+            /
+            sum(rate(creditsense_llm_requests_total[5m]))
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+          component: rag_llm
+        annotations:
+          summary: "LLM synthesis failure rate > 5%"
+          description: "LLM inference errors exceed 5% over 5m window. RAG/Decision nodes may be falling back to rule-based explanations."
+
+      - alert: HighPolicyOverrideRate
+        expr: (
+            sum(rate(creditsense_applications_total{decision="REJECTED"}[10m]))
+            /
+            sum(rate(creditsense_applications_total[10m]))
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: info
+          component: policy_engine
+        annotations:
+          summary: "Unusually high application rejection rate (>80%)"
+          description: "Rejection rate over 10m exceeds 80%. Check for incoming fraudulent batch or misconfigured policy threshold."

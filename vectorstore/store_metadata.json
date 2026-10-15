@@ -1,5 +1,5 @@
 {
-  "backend": "sentence-transformers",
+  "backend": "tfidf-sklearn",
   "chroma_collection": "lending_policy",
   "tfidf_store_path": "D:\\Crazy-Shit\\CreditSense\\creditsense\\vectorstore\\tfidf_store.pkl",
   "clause_count": 8,

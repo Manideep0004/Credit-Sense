@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: creditsense-config
+  namespace: creditsense
+data:
+  ENVIRONMENT: "production"
+  LOG_FORMAT: "json"
+  LOG_LEVEL: "INFO"
+  POSTGRES_DB: "creditsense_db"
+  POSTGRES_HOST: "creditsense-postgres"
+  POSTGRES_PORT: "5432"
+  REDIS_HOST: "creditsense-redis"
+  REDIS_PORT: "6379"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://creditsense-jaeger:4317"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: creditsense-secrets
+  namespace: creditsense
+type: Opaque
+stringData:
+  POSTGRES_USER: "creditsense"
+  POSTGRES_PASSWORD: "creditsense_secure_password"
+  DATABASE_URL: "postgresql://creditsense:creditsense_secure_password@creditsense-postgres:5432/creditsense_db"
+  REDIS_URL: "redis://creditsense-redis:6379/0"
+  CELERY_BROKER_URL: "redis://creditsense-redis:6379/0"
+  CELERY_RESULT_BACKEND: "redis://creditsense-redis:6379/0"

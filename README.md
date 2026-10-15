@@ -1,307 +1,214 @@
-# CreditSense 🏦
-### Agentic AI Loan Underwriting & Compliance Copilot
-
-> An end-to-end multi-agent pipeline, orchestrated with **LangGraph**, that takes a loan applicant's profile and produces a risk-scored, policy-compliant underwriting decision with a written justification — keeping every decision explainable and policy-traceable.
-
----
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                  CreditSense LangGraph Pipeline              │
-│                                                              │
-│  raw_input                                                   │
-│      │                                                       │
-│      ▼                                                       │
-│  ┌─────────────────┐                                         │
-│  │  Document Agent │  validates, normalises, computes DTI    │
-│  └────────┬────────┘                                         │
-│           │ validated_features                               │
-│           ▼                                                  │
-│  ┌─────────────────┐                                         │
-│  │  Risk Agent     │  GradientBoosting → prob + risk tier    │
-│  └────────┬────────┘                                         │
-│           │ default_probability, risk_tier                   │
-│           ▼                                                  │
-│  ┌─────────────────┐                                         │
-│  │ Compliance Agent│  rules + RAG retrieval (ChromaDB/TFIDF) │
-│  └────────┬────────┘                                         │
-│           │                                                  │
-│     ┌─────▼──────────────────────────────┐                   │
-│     │   Conditional Edge                 │                   │
-│     │   has_blocking_flag?               │                   │
-│     └─────┬──────────────────┬───────────┘                   │
-│           │ YES              │ NO                            │
-│           ▼                  ▼                               │
-│  ┌──────────────┐   ┌─────────────────┐                      │
-│  │ Manual Review│   │ Decision Agent  │ Groq Llama 3.3 LLM   │
-│  │    Node      │   │                 │ (+ template fallback) │
-│  └──────┬───────┘   └────────┬────────┘                      │
-│         │                   │                                │
-│         └──────────┬─────────┘                               │
-│                    ▼                                         │
-│               FINAL DECISION                                 │
-│        APPROVED / REJECTED / MANUAL_REVIEW                   │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### Agent Roles
-
-| Agent | Role |
-|---|---|
-| **Document Agent** | Validates & normalises applicant input; computes DTI ratio |
-| **Risk Agent** | GradientBoostingClassifier → default probability + risk tier (LOW/MODERATE/HIGH/SEVERE) |
-| **Compliance Agent** | Rule-based flags + semantic RAG retrieval from policy corpus |
-| **Decision Agent** | Synthesises risk + compliance → APPROVED/REJECTED/MANUAL_REVIEW + LLM explanation |
-| **Manual Review Node** | Terminal node for blocked apps — bypasses auto-decision |
-
-### Conditional Routing (Core Agentic Property)
-
-After the Compliance Agent, the graph evaluates `has_blocking_flag`:
-- **AML_STRUCTURING** (txn_volatility > 80 AND loan > 10× income)
-- **INCOMPLETE_KYC** (kyc_verified = 0)
-- **REPEAT_DEFAULTER** (past_defaults > 1)
-
-If **any** blocking flag is present → `manual_review_node` (auto-approval is prohibited, even if ML risk is LOW).
+# CreditSense 🏦⚡
+> **Cloud-Native, Observable, Multi-Agent Credit Underwriting & Decision Support Platform**  
+> *Production-style portfolio platform demonstrating modern SRE, Cloud, Platform, DevOps, and Backend engineering practices.*
 
 ---
 
-## Setup
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![LangGraph](https://img.shields.io/badge/Multi--Agent-LangGraph-FF6F00?style=flat-square)](https://langchain.com)
+[![Celery](https://img.shields.io/badge/Workers-Celery%20%2B%20Redis-37814A?style=flat-square&logo=celery&logoColor=white)](https://docs.celeryq.dev)
+[![Prometheus](https://img.shields.io/badge/Metrics-Prometheus-E6522C?style=flat-square&logo=prometheus&logoColor=white)](https://prometheus.io)
+[![Grafana](https://img.shields.io/badge/Dashboards-Grafana-F46800?style=flat-square&logo=grafana&logoColor=white)](https://grafana.com)
+[![OpenTelemetry](https://img.shields.io/badge/Tracing-OpenTelemetry%20%2B%20Jaeger-4053D6?style=flat-square&logo=opentelemetry&logoColor=white)](https://opentelemetry.io)
+[![Kubernetes](https://img.shields.io/badge/Orchestration-Kubernetes%20%2B%20KEDA-326CE5?style=flat-square&logo=kubernetes&logoColor=white)](https://keda.sh)
+[![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?style=flat-square&logo=terraform&logoColor=white)](https://terraform.io)
+[![Cost](https://img.shields.io/badge/Local%20Cost-%240.00%20Free-brightgreen?style=flat-square)](docs/cost_optimization.md)
 
-### Prerequisites
-- Python 3.11+
-- (Optional) Groq API key — free at [console.groq.com](https://console.groq.com)
+---
 
-### 1. Clone & Install
+## 🎯 Executive Overview
 
+**CreditSense** transforms traditional credit scoring into an observable, scalable, cloud-native automated decision pipeline. It combines:
+1. **Asynchronous API Gateway (FastAPI)** with idempotency guarantees, correlation IDs, and OWASP security hardening.
+2. **LangGraph Multi-Agent Underwriting Engine** with specialized agents: Financial, Risk (ML GradientBoosting), Research, Policy (RAG), and Decision.
+3. **Deterministic Regulatory Compliance Layer**: Legal mandates (e.g. statutory DTI > 43% cap) strictly override ML confidence probabilities, preventing AI hallucination risks in high-stakes financial operations.
+4. **Resilient Dual-Engine RAG**: ChromaDB vector store with instant automatic fallback to in-memory TF-IDF.
+5. **Full-Stack Observability & SRE Alerting**: Prometheus SLI/SLO tracking, Google SRE multi-window multi-burn-rate alerts, Jaeger distributed tracing, and pre-provisioned Grafana dashboards.
+6. **Cloud-Native Autoscaling**: Kubernetes manifests and KEDA `ScaledObject` scaling worker pods based on real-time Redis queue depth.
+7. **100% $0 Local Cost**: Zero paid SaaS dependencies. Fully runnable on laptop or free Kubernetes (Kind/Minikube).
+
+---
+
+## 🏗️ System Architecture
+
+```
+                                  ┌────────────────────────┐
+                                  │ Streamlit / REST Client│
+                                  └───────────┬────────────┘
+                                              │ HTTP / JSON
+                                              ▼
+                                  ┌────────────────────────┐
+                 ┌───────────────►│  FastAPI Gateway (8000)│◄───────────────┐
+                 │                └───────────┬────────────┘                │
+                 │                            │                             │
+                 │ 202 Accepted               │ Task Dispatch (Trace ID)    │ Scrapes
+                 │ Polling Status             ▼                             │ /metrics
+                 │                ┌────────────────────────┐                │
+                 │                │ Redis Broker & Backend │                │
+                 │                └───────────┬────────────┘                │
+                 │                            │ Task Queue                  │
+                 │                            ▼                             ▼
+   ┌─────────────┴────────────┐   ┌────────────────────────┐   ┌────────────────────────┐
+   │ PostgreSQL DB (Audit Tr) │   │ Celery Worker Pool     │   │ Prometheus & Grafana   │
+   └─────────────▲────────────┘   │ (Autoscaled via KEDA)  │   │ Dashboards & Alerts    │
+                 │                └───────────┬────────────┘   └────────────────────────┘
+                 │ Persist Decision           │
+                 │ & Audit Log                ▼
+                 │                ┌─────────────────────────────────────────────────────┐
+                 │                │             LangGraph Multi-Agent Pipeline          │
+                 │                │                                                     │
+                 │                │  FinancialAgent ──► RiskAgent (ML Inference)        │
+                 │                │                            │                        │
+                 │                │                            ▼                        │
+                 │                │  DecisionAgent ◄── PolicyAgent (RAG / TF-IDF)       │
+                 │                │  (Deterministic            ▲                        │
+                 │                │   Compliance Override)     │                        │
+                 │                └────────────────────────────┼────────────────────────┘
+                 │                                             │ Clause Search
+                 │                                             ▼
+                 └─────────────────────────────────── ChromaDB / TF-IDF Store
+```
+
+---
+
+## 🚀 Quick Start (Choose Your Preferred Mode)
+
+### Mode 1: Full Docker Compose Stack ($0 Cost, 1 Command)
 ```bash
-git clone https://github.com/your-org/creditsense.git
-cd creditsense/creditsense
+# Clone the repository
+git clone https://github.com/your-username/CreditSense.git
+cd CreditSense
+
+# Spin up all 8 services (API, Celery, Postgres, Redis, Prometheus, Grafana, Jaeger, Streamlit)
+docker compose up --build -d
+```
+
+Access the services:
+- **FastAPI Interactive Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Streamlit Underwriter UI**: [http://localhost:8501](http://localhost:8501)
+- **Grafana SRE Dashboard**: [http://localhost:3000](http://localhost:3000) (User: `admin` / Password: `admin`)
+- **Prometheus Alert Manager**: [http://localhost:9090/alerts](http://localhost:9090/alerts)
+- **Jaeger Distributed Tracing**: [http://localhost:16686](http://localhost:16686)
+
+---
+
+### Mode 2: Local Standalone Python (Fast, Zero Docker Required)
+```bash
+# Install dependencies
 pip install -r requirements.txt
-```
 
-### 2. Set Groq API Key (optional — graceful fallback if absent)
+# Run database migrations
+alembic upgrade head
 
-```bash
-# Windows
-set GROQ_API_KEY=gsk_your_key_here
+# Ingest credit policy corpus (TF-IDF instant mode)
+python rag/ingest.py --force-tfidf
 
-# Linux/macOS
-export GROQ_API_KEY=gsk_your_key_here
-```
-
-If `GROQ_API_KEY` is not set, a high-quality templated explanation is used instead.
-
-### 3. Generate Synthetic Data
-
-```bash
-python data/generate_data.py
-```
-
-Expected output:
-```
-Dataset saved → data/loan_applicants.csv
-Shape         : (3000, 11)
-Class balance:
-  Non-default (0): 2252 (75.1%)
-  Default     (1): 748 (24.9%)
-```
-
-### 4. Train the Risk Model
-
-```bash
-python train_risk_model.py
-```
-
-Expected output:
-```
-CreditSense — Risk Model Training Complete
-  Test AUC : 0.9182
-  ...
-Model saved → models/risk_model.pkl
-```
-
-Target AUC range: **0.85 – 0.95**
-
-### 5. Ingest Policy Corpus
-
-```bash
-python ingest_policies.py
-```
-
-This embeds 8 lending/KYC/AML policy clauses into ChromaDB (or TF-IDF fallback):
-```
-[INFO] Using embedding backend: sentence-transformers
-[OK] Ingested 8 clauses into ChromaDB.
+# Start FastAPI Gateway
+uvicorn api.main:app --reload --port 8000
 ```
 
 ---
 
-## Running
+## 📊 Observability & SRE Metrics
 
-### Streamlit Demo
+CreditSense exposes Prometheus metrics at `/api/v1/metrics`:
+- `creditsense_applications_total`: Total applications broken down by decision (`APPROVED`, `REJECTED`, `MANUAL_REVIEW`).
+- `creditsense_application_processing_duration_seconds`: Pipeline end-to-end latency histogram.
+- `creditsense_agent_execution_duration_seconds`: Individual agent node latency breakdown (`financial_agent`, `risk_agent`, `research_agent`, `policy_agent`, `decision_agent`).
+- `creditsense_queue_depth`: Instantaneous Redis task queue backlog.
+- `creditsense_api_requests_total`: HTTP request rates and response codes for availability SLI calculation.
 
+### Service Level Objectives (SLOs)
+- **Availability SLO**: 99.5% non-5xx requests over rolling 30 days.
+- **Latency SLO**: p99 end-to-end processing latency < 5.0 seconds.
+- **Alerting**: Multi-window multi-burn-rate alerts (14.4x 1h page, 6x 6h warning).
+- Detailed documentation: [`docs/slos.md`](docs/slos.md).
+
+---
+
+## 🛡️ Production Failure Drills & RCAs
+
+We simulated, tested, and documented 10 production failure modes:
+1. **Redis Broker Outage**: Graceful fallback to local synchronous pipeline without dropping applications.
+2. **Postgres Pool Starvation**: Connection recycling and circuit-breaker handling.
+3. **Worker Pod OOM Crash**: Task idempotency prevents duplicate evaluation upon restart.
+4. **LLM Provider Timeout**: Strict 3s timeout with instant deterministic explanation fallback.
+5. **ChromaDB Vector Store Lockup**: Instant fallback to in-memory TF-IDF semantic search.
+6. **10x Traffic Spike**: KEDA event-driven autoscaling scales workers from 1 to 20 replicas.
+7. **Schema Poisoning**: Pydantic v2 strict schemas reject malformed payloads pre-ingress.
+8. **Compliance Exploit**: Deterministic compliance layer overrides high ML score on statutory DTI breach.
+9. **K8s Node Termination**: Pre-stop lifecycle hook cancels consumers gracefully.
+10. **Worker Memory Leaks**: Celery worker max-tasks-per-child recycling.
+
+Full post-mortem reports: [`docs/failure_scenarios.md`](docs/failure_scenarios.md).
+
+---
+
+## ☸️ Kubernetes & KEDA Deployment
+
+Deploy the complete platform into Kubernetes (Kind, Minikube, or EKS):
 ```bash
-streamlit run app.py
+kubectl apply -k k8s/
 ```
 
-Open **http://localhost:8501** — configure an applicant in the sidebar, click **Run Underwriting**.
+Key features:
+- **KEDA ScaledObject**: Dynamically scales `creditsense-worker` pods from 1 to 20 replicas based on Redis queue depth (`targetListLength: 5`).
+- **Least-Privilege Security**: Non-root UID 10001, dropped capabilities, NetworkPolicies restricting inter-pod traffic.
+- **Probes**: Configured `startupProbe`, `livenessProbe`, and `readinessProbe` on all endpoints.
 
-**Demo presets** in the sidebar:
-- ✅ **Clean** — qualified applicant, should be APPROVED
-- ⚠️ **AML** — good financials but high volatility + large loan → MANUAL_REVIEW
-- ❌ **Risk** — high DTI, 3 defaults → MANUAL_REVIEW / REJECTED
+---
 
-### CLI Smoke Test
+## 📂 Project Structure
 
+```
+CreditSense/
+├── api/                   # FastAPI Gateway, Schemas, Routers & Middleware
+├── agents/                # LangGraph Agent Nodes (Financial, Risk, Policy, Decision)
+├── database/              # SQLAlchemy Models, Async Sessions, Repository & Auditing
+├── alembic/               # Database Schema Migrations
+├── workers/               # Celery App, Background Tasks & Idempotency Guards
+├── rag/                   # Corpus Ingestion, ChromaDB & TF-IDF Hybrid Retrievers
+├── monitoring/            # Prometheus Config, Alert Rules, Grafana Dashboards
+├── otel/                  # OpenTelemetry Tracer Provider & Trace Propagation
+├── k8s/                   # Kubernetes Manifests, KEDA ScaledObject, NetworkPolicies
+├── terraform/             # Modular IaC (Local Kind & AWS Production with Cost Warning)
+├── docs/                  # Architecture Diagrams, SLOs, RCAs, Interview Guide
+├── tests/                 # Full Pytest Suite (Unit, Integration, Observability, Locust)
+├── app.py                 # Streamlit Underwriter UI Dashboard
+├── Dockerfile.api         # Multi-stage non-root container for API
+├── Dockerfile.worker      # Multi-stage non-root container for Celery Worker
+├── Dockerfile.frontend    # Multi-stage non-root container for Streamlit UI
+├── docker-compose.yml     # Full 8-tier local orchestration stack
+└── Jenkinsfile            # Declarative Multi-Stage CI/CD Pipeline
+```
+
+---
+
+## 🧪 Testing & Verification
+
+Run the comprehensive automated test suite:
 ```bash
-python graph.py
+pytest -v --cov=creditsense
 ```
 
-### Direct Graph Usage (Python)
-
-```python
-from graph import build_graph
-
-app = build_graph()
-result = app.invoke({
-    "raw_input": {
-        "age": 34,
-        "employment_years": 8,
-        "monthly_income": 90_000,
-        "existing_monthly_debt": 20_000,
-        "credit_utilization_pct": 30.0,
-        "past_defaults": 0,
-        "requested_loan_amount": 400_000,
-        "txn_volatility_score": 25.0,
-        "kyc_verified": 1,
-    },
-    "pipeline_trace": [],
-})
-print(result["decision"])         # APPROVED
-print(result["risk_tier"])        # LOW or MODERATE
-print(result["explanation"])      # natural-language justification
-```
+Includes:
+- `tests/test_api.py`: API Gateway route validation & error handling
+- `tests/test_database.py`: SQLAlchemy persistence, audit logging & transaction isolation
+- `tests/test_workers.py`: Celery task idempotency & retry mechanisms
+- `tests/test_agents.py`: LangGraph state machine & node transitions
+- `tests/test_policy_overrides.py`: Deterministic compliance override verification
+- `tests/test_rag.py`: ChromaDB & TF-IDF retriever precision & fallbacks
+- `tests/test_observability.py`: Prometheus metrics exposition & OpenTelemetry spans
+- `tests/load_test_locust.py`: High-concurrency performance load testing
 
 ---
 
-## Running Tests
+## 🎓 Technical Interview Guide
 
-```bash
-cd creditsense
-pytest tests/ -v
-```
-
-### Test Coverage
-
-| Test Class | Tests |
-|---|---|
-| `TestDocumentAgent` | Valid input, DTI computation, missing fields, string coercion |
-| `TestRiskAgent` | Clean (LOW/MOD), high-risk (HIGH/SEVERE), probability bounds |
-| `TestComplianceAgent` | Clear, AML block, KYC block, repeat-defaulter block, non-blocking HIGH_DTI |
-| `TestDecisionAgent` | Approved path, blocking override, severe risk, explanation type |
-| `TestGraphPipeline` | E2E approval, high-risk non-approval, **AML override proves compliance > ML**, KYC, repeat-defaulter, trace completeness |
-
-**Key acceptance test:**
-```
-test_aml_flag_overrides_low_ml_risk_to_manual_review
-```
-Proves that an applicant with LOW ML risk (15% default probability, no defaults, KYC verified) is **still routed to MANUAL_REVIEW** when AML_STRUCTURING is flagged.
+Preparing for technical interviews? Check out our deep-dive guide:
+👉 **[`docs/interview_guide.md`](docs/interview_guide.md)** covering SRE, Cloud Architecture, Platform Engineering, FinOps, and ML System Design questions.
 
 ---
 
-## Policy Corpus
-
-| Clause ID | Category | Summary |
-|---|---|---|
-| DTI-1.1 | Credit Risk | Max DTI ≤ 0.55; 0.45–0.55 needs senior sign-off |
-| DTI-1.2 | Credit Risk | First-time borrower: max loan = 12× monthly income |
-| DEFAULT-2.1 | Credit History | Repeat defaulter (>1) → mandatory manual review |
-| DEFAULT-2.2 | Credit History | Single default OK with mitigating factors |
-| AML-3.1 | AML / CFT | Structuring risk: volatility >80 + loan >10× income |
-| KYC-4.1 | KYC / Identity | KYC mandatory; incomplete = hard block |
-| KYC-4.2 | KYC / Identity | PEP & sanctions screening required |
-| RISK-5.1 | Risk Tiering | SEVERE (>60%) → manual; HIGH (40–60%) → senior approval |
-
----
-
-## Scalability & Production Roadmap
-
-### 1. Real Bureau Data
-- Swap synthetic `generate_data.py` for API calls to **CIBIL / Experian / CRIF** bureaus.
-- Add a bureau adapter layer in `agents/document_agent.py` that normalises bureau XML/JSON responses to the same feature dict.
-- Re-train the risk model on real bureau data periodically (monthly refit cadence).
-
-### 2. Production-Grade Embeddings
-- The TF-IDF retriever in `ingest_policies.py` is a clearly marked stand-in.
-- Replace `_tfidf_backend()` with `all-MiniLM-L6-v2` (already supported) or a fine-tuned domain model (e.g., `FinBERT`).
-- For scale, move from ChromaDB local to **Pinecone** / **Weaviate** / **pgvector**.
-
-### 3. Batch & Async Execution
-- Wrap `build_graph().invoke()` in an async function using `langgraph`'s async graph interface (`ainvoke`).
-- Deploy as a **FastAPI** service with background task queuing (Celery + Redis) for concurrent loan applications.
-- Add a rate-limiter and per-applicant idempotency key to prevent double-submission.
-
-### 4. Cloud Deployment
-```
-┌─────────────┐    ┌──────────────────┐    ┌──────────────┐
-│  Streamlit  │───▶│  FastAPI Backend  │───▶│  LangGraph   │
-│   (GCP      │    │  (Cloud Run /     │    │  Workers     │
-│   Cloud Run)│    │   App Engine)     │    │  (Celery)    │
-└─────────────┘    └──────────────────┘    └──────┬───────┘
-                                                   │
-                          ┌────────────────────────┤
-                          │                        │
-                   ┌──────▼──────┐        ┌────────▼────────┐
-                   │  ChromaDB   │        │  Risk Model     │
-                   │ (Pinecone/  │        │  (Vertex AI /   │
-                   │  Weaviate)  │        │  SageMaker)     │
-                   └─────────────┘        └─────────────────┘
-```
-- **Model registry**: MLflow or Vertex AI Model Registry for versioned risk model artifacts.
-- **Audit trail**: All decisions written to BigQuery / PostgreSQL with full feature snapshot for regulatory audit.
-- **Secrets**: Google Secret Manager / AWS Secrets Manager for `GROQ_API_KEY` and bureau API credentials.
-
-### 5. Monitoring & Compliance
-- Model drift detection: track rolling AUC monthly; trigger retraining alert at AUC < 0.80.
-- Decision fairness audit: periodic demographic parity check across age/employment tenure buckets.
-- Full audit log (input features, risk score, compliance flags, clause IDs, final decision) stored immutably for regulatory inspection.
-
----
-
-## Project Structure
-
-```
-creditsense/
-├── data/
-│   ├── generate_data.py       # synthetic dataset generator
-│   ├── policy_corpus.py       # 8 hardcoded lending/AML/KYC clauses
-│   └── loan_applicants.csv    # generated dataset (git-ignored)
-├── models/
-│   └── risk_model.pkl         # trained GBM artifact (git-ignored)
-├── vectorstore/               # ChromaDB persistence + TF-IDF store
-├── agents/
-│   ├── document_agent.py      # validation + normalisation + DTI
-│   ├── risk_agent.py          # ML scoring → prob + tier
-│   ├── compliance_agent.py    # rules + RAG retrieval
-│   └── decision_agent.py      # synthesis + LLM explanation
-├── graph.py                   # LangGraph StateGraph
-├── ingest_policies.py         # embed corpus into ChromaDB / TF-IDF
-├── train_risk_model.py        # GBM training + evaluation
-├── app.py                     # Streamlit UI
-├── tests/
-│   └── test_agents.py         # pytest suite
-├── requirements.txt
-└── README.md
-```
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-## Disclaimer
-
-CreditSense is a research prototype. No real credit decisions should be made based solely on this system without qualified human underwriter oversight and compliance with applicable banking regulations (RBI Master Direction on KYC, PMLA 2002, etc.).
+## 📄 License
+MIT License. Created for production-style engineering portfolio demonstration.

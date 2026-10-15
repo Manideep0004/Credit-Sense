@@ -64,96 +64,7 @@ FLAG_DESCRIPTIONS = {
 }
 
 
-# ── retrieval backends ────────────────────────────────────────────────────────
-
-def _cosine_sim(a: list[float], b: list[float]) -> float:
-    va = np.array(a, dtype=float)
-    vb = np.array(b, dtype=float)
-    denom = np.linalg.norm(va) * np.linalg.norm(vb)
-    return float(np.dot(va, vb) / denom) if denom > 0 else 0.0
-
-
-class _ChromaRetriever:
-    def __init__(self, collection_name: str, vectorstore_dir: Path):
-        import chromadb
-        from sentence_transformers import SentenceTransformer
-
-        self._model = SentenceTransformer("all-MiniLM-L6-v2")
-        client = chromadb.PersistentClient(path=str(vectorstore_dir))
-        self._collection = client.get_collection(collection_name)
-
-    def retrieve(self, query: str, top_k: int = 2) -> list[dict]:
-        emb = self._model.encode([query], show_progress_bar=False).tolist()
-        results = self._collection.query(
-            query_embeddings=emb,
-            n_results=top_k,
-            include=["documents", "metadatas"],
-        )
-        out = []
-        for doc, meta in zip(results["documents"][0], results["metadatas"][0]):
-            out.append({"id": meta["id"], "title": meta["title"], "text": doc})
-        return out
-
-
-class _TfidfRetriever:
-    def __init__(self, store_path: Path):
-        # NOTE: TF-IDF retriever is a swappable stand-in for production embeddings.
-        with open(store_path, "rb") as f:
-            store = pickle.load(f)
-        self._vectorizer = store["vectorizer"]
-        self._matrix = store["matrix"]  # sparse (n_clauses, vocab)
-        self._clauses = store["clauses"]
-
-    def retrieve(self, query: str, top_k: int = 2) -> list[dict]:
-        q_vec = self._vectorizer.transform([query]).toarray()[0]
-        scores = []
-        mat_dense = self._matrix.toarray()
-        for i, row in enumerate(mat_dense):
-            scores.append((i, _cosine_sim(q_vec.tolist(), row.tolist())))
-        scores.sort(key=lambda x: x[1], reverse=True)
-        return [
-            {
-                "id": self._clauses[i]["id"],
-                "title": self._clauses[i]["title"],
-                "text": self._clauses[i]["text"],
-            }
-            for i, _ in scores[:top_k]
-        ]
-
-
-# ── retriever singleton ───────────────────────────────────────────────────────
-_RETRIEVER = None
-
-
-def _get_retriever():
-    global _RETRIEVER
-    if _RETRIEVER is not None:
-        return _RETRIEVER
-
-    if not METADATA_PATH.exists():
-        raise RuntimeError(
-            "Vector store not initialised. Run:  python ingest_policies.py"
-        )
-
-    meta = json.loads(METADATA_PATH.read_text())
-    backend = meta.get("backend", "tfidf-sklearn")
-
-    if backend == "sentence-transformers":
-        try:
-            _RETRIEVER = _ChromaRetriever(
-                meta["chroma_collection"], VECTORSTORE_DIR
-            )
-            return _RETRIEVER
-        except Exception as e:
-            print(f"[WARN] ChromaDB retrieval failed ({e}). Falling back to TF-IDF.")
-
-    tfidf_path = Path(meta["tfidf_store_path"])
-    if not tfidf_path.exists():
-        raise RuntimeError(
-            f"TF-IDF store not found at {tfidf_path}. Re-run ingest_policies.py"
-        )
-    _RETRIEVER = _TfidfRetriever(tfidf_path)
-    return _RETRIEVER
+from rag.vectorstore import get_retriever
 
 
 # ── rule engine ───────────────────────────────────────────────────────────────
@@ -209,8 +120,8 @@ def run(
         - status             : "ok" | "error"
     """
     try:
-        retriever = _get_retriever()
-    except RuntimeError as e:
+        retriever = get_retriever()
+    except Exception as e:
         return {
             "flags": [],
             "blocking_flags": [],

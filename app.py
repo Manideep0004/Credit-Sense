@@ -18,11 +18,15 @@ Run:
 import sys
 from pathlib import Path
 
+import os
+import httpx
 import streamlit as st
 
 # Allow imports from creditsense package root
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
+
+API_BASE_URL = os.environ.get("CREDITSENSE_API_URL", "http://127.0.0.1:8000")
 
 # ── page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -218,6 +222,13 @@ with st.sidebar:
         st.session_state["txnvol"] = 70
         st.rerun()
 
+    backend_mode = st.radio(
+        "Execution Gateway",
+        ["FastAPI REST API", "Direct In-Process"],
+        index=0,
+        help="FastAPI routes requests through the REST gateway. Direct runs the LangGraph engine in-process."
+    )
+
     run_btn = st.button("🚀 Run Underwriting", type="primary", use_container_width=True)
 
 
@@ -226,7 +237,7 @@ with st.sidebar:
 st.markdown("# 🏦 CreditSense")
 st.markdown("**Agentic AI Loan Underwriting & Compliance Copilot**")
 st.markdown(
-    "_Powered by LangGraph · GradientBoosting · ChromaDB / TF-IDF RAG · Groq Llama 3.3_"
+    "_Powered by LangGraph · GradientBoosting · ChromaDB / TF-IDF RAG · Groq Llama 3.3 · FastAPI Gateway_"
 )
 st.divider()
 
@@ -246,8 +257,8 @@ if not run_btn:
 # ── build and invoke pipeline ─────────────────────────────────────────────────
 
 raw_input = {
-    "age": age,
-    "employment_years": employment_years,
+    "age": int(age),
+    "employment_years": float(employment_years),
     "monthly_income": float(monthly_income),
     "existing_monthly_debt": float(existing_monthly_debt),
     "credit_utilization_pct": float(credit_utilization_pct),
@@ -257,13 +268,46 @@ raw_input = {
     "kyc_verified": int(kyc_verified),
 }
 
+result = {}
 with st.spinner("Running multi-agent underwriting pipeline…"):
-    try:
-        app = get_graph()
-        result = app.invoke({"raw_input": raw_input, "pipeline_trace": []})
-    except Exception as e:
-        st.error(f"Pipeline error: {e}")
-        st.stop()
+    if backend_mode == "FastAPI REST API":
+        try:
+            with httpx.Client(timeout=30.0) as client:
+                resp = client.post(f"{API_BASE_URL}/api/v1/applications", json=raw_input)
+                if resp.status_code in (200, 201):
+                    app_data = resp.json()
+                    details = app_data.get("decision_details", {}) or {}
+                    result = {
+                        "decision": details.get("decision"),
+                        "risk_tier": details.get("risk_tier"),
+                        "default_probability": details.get("default_probability"),
+                        "dti_ratio": details.get("dti_ratio"),
+                        "flags": details.get("flags", []),
+                        "blocking_flags": details.get("blocking_flags", []),
+                        "retrieved_clauses": details.get("retrieved_clauses", []),
+                        "applied_clause_ids": details.get("applied_clause_ids", []),
+                        "explanation": details.get("explanation", ""),
+                        "interest_rate_pct": details.get("interest_rate_pct"),
+                        "explanation_source": details.get("explanation_source"),
+                        "pipeline_trace": details.get("pipeline_trace", []),
+                        "validated_features": app_data.get("applicant_data"),
+                        "gateway_used": f"FastAPI ({app_data.get('application_id', '')[:8]}...)",
+                    }
+                else:
+                    st.warning(f"FastAPI gateway returned HTTP {resp.status_code}. Falling back to direct in-process engine.")
+                    app = get_graph()
+                    result = app.invoke({"raw_input": raw_input, "pipeline_trace": []})
+        except Exception as e:
+            st.info(f"FastAPI gateway unavailable at {API_BASE_URL} ({e}). Executing via direct in-process engine.")
+            app = get_graph()
+            result = app.invoke({"raw_input": raw_input, "pipeline_trace": []})
+    else:
+        try:
+            app = get_graph()
+            result = app.invoke({"raw_input": raw_input, "pipeline_trace": []})
+        except Exception as e:
+            st.error(f"Pipeline error: {e}")
+            st.stop()
 
 decision = result.get("decision", "ERROR")
 risk_tier = result.get("risk_tier", "N/A")

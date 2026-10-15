@@ -1,0 +1,39 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: creditsense-worker-scaler
+  namespace: creditsense
+  labels:
+    app: creditsense-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: creditsense-worker
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  pollingInterval: 10
+  cooldownPeriod: 30
+  advanced:
+    restoreToOriginalReplicaCount: true
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Percent
+              value: 100
+              periodSeconds: 15
+        scaleDown:
+          stabilizationWindowSeconds: 60
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 30
+  triggers:
+    - type: redis
+      metadata:
+        address: creditsense-redis.creditsense.svc.cluster.local:6379
+        listName: celery
+        listLength: "5"
+        enableTLS: "false"
