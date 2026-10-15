@@ -145,7 +145,7 @@ class UnderwritingService:
             # 2. Asynchronous Celery dispatch
             try:
                 from workers.tasks import process_underwriting_application
-                task = process_underwriting_application.delay(app_id)
+                task = process_underwriting_application.apply_async(args=[app_id], retry=False)
                 logger.info("Enqueued Celery task %s for application %s", task.id, app_id)
                 return _map_model_to_response(app_model)
             except Exception as celery_err:

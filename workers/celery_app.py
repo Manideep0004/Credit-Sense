@@ -19,12 +19,12 @@ if str(ROOT) not in sys.path:
 
 REDIS_BROKER_URL = os.environ.get(
     "CELERY_BROKER_URL",
-    os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+    os.environ.get("REDIS_URL", "redis://localhost:6379/0?socket_timeout=1.0&socket_connect_timeout=1.0"),
 )
 
 REDIS_RESULT_BACKEND = os.environ.get(
     "CELERY_RESULT_BACKEND",
-    "redis://localhost:6379/1",
+    "redis://localhost:6379/1?socket_timeout=1.0&socket_connect_timeout=1.0",
 )
 
 celery_app = Celery(
@@ -50,6 +50,13 @@ celery_app.conf.update(
     task_default_queue="underwriting_queue",
     task_routes={
         "workers.tasks.process_underwriting_application": {"queue": "underwriting_queue"},
+    },
+    broker_connection_timeout=1.0,
+    broker_connection_max_retries=1,
+    broker_transport_options={
+        "max_retries": 1,
+        "socket_timeout": 1.0,
+        "socket_connect_timeout": 1.0,
     },
 )
 

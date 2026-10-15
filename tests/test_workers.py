@@ -78,6 +78,7 @@ def test_worker_task_execution(clean_applicant_dict):
     assert result["decision"] == "APPROVED"
 
     # 3. Verify database state
+    db.expire_all()
     updated_app = repo.get_application_by_id(app_id)
     assert updated_app.status == "COMPLETED"
     assert updated_app.decision is not None

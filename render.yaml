@@ -1,0 +1,26 @@
+services:
+  # 1. FastAPI REST API Backend
+  - type: web
+    name: creditsense-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # 2. Streamlit Underwriter Frontend Dashboard
+  - type: web
+    name: creditsense-ui
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: CREDITSENSE_API_URL
+        fromService:
+          type: web
+          name: creditsense-api
+          property: url

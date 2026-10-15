@@ -43,9 +43,9 @@ def test_metrics_recording():
     set_queue_depth(5)
 
     metrics_text = get_metrics_response()
-    assert b"creditsense_applications_total" in metrics_text
-    assert b"creditsense_agent_duration_seconds" in metrics_text
-    assert b"creditsense_rag_search_duration_seconds" in metrics_text
+    assert b"creditsense_applications_processed_total" in metrics_text
+    assert b"creditsense_agent_execution_duration_seconds" in metrics_text
+    assert b"creditsense_rag_retrieval_latency_seconds" in metrics_text
     assert b"creditsense_queue_depth" in metrics_text
 
 

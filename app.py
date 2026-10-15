@@ -26,7 +26,10 @@ import streamlit as st
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
-API_BASE_URL = os.environ.get("CREDITSENSE_API_URL", "http://127.0.0.1:8000")
+API_BASE_URL = os.environ.get(
+    "CREDITSENSE_API_URL",
+    os.environ.get("BACKEND_API_URL", "http://127.0.0.1:8000"),
+)
 
 # ── page config ───────────────────────────────────────────────────────────────
 st.set_page_config(

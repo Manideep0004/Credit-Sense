@@ -21,6 +21,7 @@ MODEL_PATH = ROOT / "models" / "risk_model.pkl"
 VECTORSTORE_DIR = ROOT / "vectorstore"
 
 
+@router.get("/healthz", include_in_schema=False)
 @router.get(
     "/health",
     response_model=HealthResponse,
@@ -39,6 +40,7 @@ def get_health() -> HealthResponse:
     )
 
 
+@router.get("/readyz", include_in_schema=False)
 @router.get(
     "/ready",
     summary="Service Readiness Probe",

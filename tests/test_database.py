@@ -24,9 +24,15 @@ from database.models import Base
 from database.repository import ApplicationRepository
 from database.session import get_db
 
+from sqlalchemy.pool import StaticPool
+
 # Use an isolated in-memory SQLite database for unit testing
 TEST_DATABASE_URL = "sqlite:///:memory:"
-test_engine = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
+test_engine = create_engine(
+    TEST_DATABASE_URL,
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 
@@ -131,8 +137,8 @@ def test_repository_failure_recording(db_session, sample_applicant_dict):
 
 def test_api_audit_trail_endpoint(client_with_db, sample_applicant_dict):
     # 1. Create via API
-    res = client_with_db.post("/api/v1/applications", json=sample_applicant_dict)
-    assert res.status_code == 201
+    res = client_with_db.post("/api/v1/applications?sync=true", json=sample_applicant_dict)
+    assert res.status_code == 202
     app_id = res.json()["application_id"]
 
     # 2. Fetch audit trail via API

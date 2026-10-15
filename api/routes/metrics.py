@@ -21,6 +21,7 @@ from monitoring.metrics import (
 router = APIRouter(tags=["Health & Observability"])
 
 
+@router.get("/metrics", include_in_schema=False)
 @router.get(
     "/api/v1/metrics",
     summary="Prometheus Metrics Exposition",

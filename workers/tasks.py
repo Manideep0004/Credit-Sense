@@ -42,7 +42,7 @@ def _get_worker_graph():
     retry_backoff_max=60,
     retry_jitter=True,
 )
-def process_underwriting_application(self, application_id: str) -> Dict[str, Any]:
+def process_underwriting_application(self, *args, **kwargs) -> Dict[str, Any]:
     """
     Asynchronous task executing the end-to-end multi-agent underwriting pipeline.
 
@@ -53,8 +53,21 @@ def process_underwriting_application(self, application_id: str) -> Dict[str, Any
     - Automatically retries up to 3 times with exponential backoff on transient errors.
     - Captures SoftTimeLimitExceeded and persists a failure record.
     """
+    if len(args) == 2:
+        self, application_id = args
+    elif len(args) == 1:
+        application_id = args[0]
+    elif "application_id" in kwargs:
+        application_id = kwargs["application_id"]
+    else:
+        raise ValueError("application_id must be provided")
+
+    req = getattr(self, "request", None)
+    retries = getattr(req, "retries", 0)
+    max_retries = getattr(self, "max_retries", 3)
+
     logger.info("Celery worker starting underwriting task for application: %s (attempt %d/%d)",
-                application_id, self.request.retries + 1, self.max_retries + 1)
+                application_id, retries + 1, max_retries + 1)
 
     db = SessionLocal()
     repo = ApplicationRepository(db)
@@ -76,11 +89,13 @@ def process_underwriting_application(self, application_id: str) -> Dict[str, Any
 
         # Update status to PROCESSING and log audit event
         app_model.status = "PROCESSING"
+        hostname = getattr(req, "hostname", "default") or "default"
+        task_id = getattr(req, "id", "local_task")
         audit = AuditEvent(
             application_id=application_id,
             event_type="UNDERWRITING_TASK_STARTED",
-            actor=f"celery_worker_{self.request.hostname or 'default'}",
-            payload_json=json.dumps({"task_id": self.request.id, "attempt": self.request.retries + 1}),
+            actor=f"celery_worker_{hostname}",
+            payload_json=json.dumps({"task_id": task_id, "attempt": retries + 1}),
         )
         db.add(audit)
         db.commit()
