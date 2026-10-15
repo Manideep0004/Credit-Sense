@@ -9,6 +9,7 @@ Pure function: dict → dict.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,17 @@ def _load_model() -> dict:
                 f"Risk model not found at {MODEL_PATH}.\n"
                 "Run:  python train_risk_model.py"
             )
+        # Compatibility patch for cross-platform/version unpickling of Cython _loss
+        try:
+            import sklearn._loss._loss as _loss_mod
+            sys.modules["_loss"] = _loss_mod
+        except Exception:
+            try:
+                import sklearn._loss as _loss_mod
+                sys.modules["_loss"] = _loss_mod
+            except Exception:
+                pass
+
         _MODEL_CACHE = joblib.load(MODEL_PATH)
     return _MODEL_CACHE
 

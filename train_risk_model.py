@@ -86,23 +86,26 @@ def train_and_save(data_path: Path = DATA_PATH, model_path: Path = MODEL_PATH) -
     print(f"\nClassification Report (threshold = 0.5):\n")
     print(classification_report(y_test, y_pred, target_names=["Non-Default", "Default"]))
 
-    # Feature importances
-    clf = pipeline.named_steps["clf"]
-    importance_df = pd.DataFrame(
-        {"feature": FEATURE_COLS, "importance": clf.feature_importances_}
-    ).sort_values("importance", ascending=False)
-    print("Feature Importances:")
-    for _, row in importance_df.iterrows():
-        bar = "█" * int(row["importance"] * 50)
-        print(f"  {row['feature']:30s} {row['importance']:.4f}  {bar}")
-
     # Persist
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(
         {"pipeline": pipeline, "feature_cols": FEATURE_COLS},
         model_path,
     )
-    print(f"\nModel saved → {model_path}")
+    print(f"\nModel saved -> {model_path}")
+
+    # Feature importances
+    try:
+        clf = pipeline.named_steps["clf"]
+        importance_df = pd.DataFrame(
+            {"feature": FEATURE_COLS, "importance": clf.feature_importances_}
+        ).sort_values("importance", ascending=False)
+        print("Feature Importances:")
+        for _, row in importance_df.iterrows():
+            bar = "#" * int(row["importance"] * 50)
+            print(f"  {row['feature']:30s} {row['importance']:.4f}  {bar}")
+    except Exception:
+        pass
 
     return {"auc": auc, "model_path": str(model_path)}
 
